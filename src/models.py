@@ -24,12 +24,19 @@ class User(db.Model):
     email = db.Column(db.String(250), unique=True, nullable=False)
     password = db.Column(db.String(250), nullable=False)
     name = db.Column(db.String(250), nullable=False)
-    lastname = db.Column(db.String(250), nullable=False)
-
     favorite_characters = db.relationship('Character', secondary=favorite_characters, backref=db.backref('users_with_favorites', lazy='dynamic'))
     favorite_planets = db.relationship('Planet', secondary=favorite_planets, backref=db.backref('users_with_favorites', lazy='dynamic'))
     favorite_vehicles = db.relationship('Vehicle', secondary=favorite_vehicles, backref=db.backref('users_with_favorites', lazy='dynamic'))
 
+    def __repr__(self):
+        return '<User %r>' % self.email
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "username": self.user_name,
+            "email": self.email,
+        }
 class Planet(db.Model):
     __tablename__ = 'planet'
     id = db.Column(db.Integer, primary_key=True)
