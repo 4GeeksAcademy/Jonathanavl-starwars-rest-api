@@ -1,7 +1,9 @@
 import os
-from flask import Flask, request, jsonify, url_for
+from flask import Flask, request, jsonify, redirect, url_for, render_template, flash
 from flask_migrate import Migrate
 from flask_cors import CORS
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_bcrypt import Bcrypt
 from utils import APIException, generate_sitemap
 from admin import setup_admin
 from models import db, User, Planet, Character, Vehicle, FavoritePlanet, FavoriteCharacter, FavoriteVehicle
@@ -15,12 +17,59 @@ if db_url is not None:
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:////tmp/test.db"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'mi_clave_secreta')
 
-MIGRATE = Migrate(app, db)
 db.init_app(app)
 CORS(app)
+MIGRATE = Migrate(app, db)
 setup_admin(app)
 
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+bcrypt = Bcrypt(app)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# Rutas para autenticación
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        new_user = User(email=email, password_hash=hashed_password)
+        db.session.add(new_user)
+        db.session.commit()
+        return redirect(url_for('login'))
+    return render_template('signup.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        user = User.query.filter_by(email=email).first()
+        if user and bcrypt.check_password_hash(user.password_hash, password):
+            login_user(user)
+            return redirect(url_for('private'))
+        else:
+            flash('Correo electrónico o contraseña incorrectos.')
+    return render_template('login.html')
+
+@app.route('/private')
+@login_required
+def private():
+    return render_template('private.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+# Rutas de la API
 @app.route('/characters', methods=['GET'])
 def get_characters():
     characters = Character.query.all()
@@ -69,7 +118,7 @@ def get_user_favorites(user_id):
 
 @app.route('/favorite/planet/<int:planet_id>', methods=['POST'])
 def add_favorite_planet(planet_id):
-    user_id = 1  # Supongamos que el usuario actual tiene id = 1
+    user_id = current_user.id
     new_favorite = FavoritePlanet(user_id=user_id, planet_id=planet_id)
     db.session.add(new_favorite)
     db.session.commit()
@@ -77,7 +126,7 @@ def add_favorite_planet(planet_id):
 
 @app.route('/favorite/character/<int:character_id>', methods=['POST'])
 def add_favorite_character(character_id):
-    user_id = 1 
+    user_id = current_user.id
     new_favorite = FavoriteCharacter(user_id=user_id, character_id=character_id)
     db.session.add(new_favorite)
     db.session.commit()
@@ -85,7 +134,7 @@ def add_favorite_character(character_id):
 
 @app.route('/favorite/vehicle/<int:vehicle_id>', methods=['POST'])
 def add_favorite_vehicle(vehicle_id):
-    user_id = 1  # Supongamos que el usuario actual tiene id = 1
+    user_id = current_user.id
     new_favorite = FavoriteVehicle(user_id=user_id, vehicle_id=vehicle_id)
     db.session.add(new_favorite)
     db.session.commit()
@@ -93,7 +142,7 @@ def add_favorite_vehicle(vehicle_id):
 
 @app.route('/favorite/planet/<int:planet_id>', methods=['DELETE'])
 def delete_favorite_planet(planet_id):
-    user_id = 1 
+    user_id = current_user.id
     favorite = FavoritePlanet.query.filter_by(user_id=user_id, planet_id=planet_id).first()
     if not favorite:
         return jsonify({'message': 'Favorite not found'}), 404
@@ -103,7 +152,7 @@ def delete_favorite_planet(planet_id):
 
 @app.route('/favorite/character/<int:character_id>', methods=['DELETE'])
 def delete_favorite_character(character_id):
-    user_id = 1 
+    user_id = current_user.id
     favorite = FavoriteCharacter.query.filter_by(user_id=user_id, character_id=character_id).first()
     if not favorite:
         return jsonify({'message': 'Favorite not found'}), 404
@@ -113,7 +162,7 @@ def delete_favorite_character(character_id):
 
 @app.route('/favorite/vehicle/<int:vehicle_id>', methods=['DELETE'])
 def delete_favorite_vehicle(vehicle_id):
-    user_id = 1 
+    user_id = current_user.id
     favorite = FavoriteVehicle.query.filter_by(user_id=user_id, vehicle_id=vehicle_id).first()
     if not favorite:
         return jsonify({'message': 'Favorite not found'}), 404
@@ -121,12 +170,12 @@ def delete_favorite_vehicle(vehicle_id):
     db.session.commit()
     return jsonify({'message': 'Favorite vehicle deleted successfully'})
 
-# Handle/serialize errors like a JSON object
+
 @app.errorhandler(APIException)
 def handle_invalid_usage(error):
     return jsonify(error.to_dict()), error.status_code
 
-# generate sitemap with all your endpoints
+
 @app.route('/')
 def sitemap():
     return generate_sitemap(app)

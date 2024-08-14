@@ -28,9 +28,14 @@ class User(db.Model):
     favorite_planets = db.relationship('Planet', secondary=favorite_planets, backref=db.backref('users_with_favorites', lazy='dynamic'))
     favorite_vehicles = db.relationship('Vehicle', secondary=favorite_vehicles, backref=db.backref('users_with_favorites', lazy='dynamic'))
 
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
     def __repr__(self):
         return '<User %r>' % self.email
-
     def serialize(self):
         return {
             "id": self.id,
